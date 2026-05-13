@@ -308,20 +308,24 @@ func (a *Analyzer) correlateBridgedFlows(ctx context.Context, batch *models.LogB
 		if err != nil || len(candidates) == 0 {
 			continue
 		}
+		// Build Cartesian product once, then commit in a single batched INSERT.
+		// With 100 entries × 5 candidates that's 500 rows in one round-trip
+		// instead of 500 sequential round-trips — DB cost goes from O(N·M) to O(1).
+		flows := make([]*storage.BridgedFlow, 0, len(b.entries)*len(candidates))
 		for _, e := range b.entries {
 			for _, c := range candidates {
-				flow := &storage.BridgedFlow{
+				flows = append(flows, &storage.BridgedFlow{
 					UserEmail:    c.UserEmail,
 					RealClientIP: c.IPAddress,
 					BridgeNodeID: c.BridgeNodeID,
 					ExitNodeID:   batch.NodeID,
 					Destination:  e.Destination,
 					Timestamp:    e.Timestamp,
-				}
-				if err := a.storage.RecordBridgedFlow(ctx, flow); err != nil {
-					_ = err
-				}
+				})
 			}
+		}
+		if err := a.storage.RecordBridgedFlows(ctx, flows); err != nil {
+			_ = err
 		}
 	}
 }

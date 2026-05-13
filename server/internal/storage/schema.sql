@@ -328,6 +328,12 @@ CREATE TABLE IF NOT EXISTS user_ip_history (
 
 CREATE INDEX IF NOT EXISTS idx_user_ip_email    ON user_ip_history(user_email);
 CREATE INDEX IF NOT EXISTS idx_user_ip_lastseen ON user_ip_history(user_email, last_seen DESC);
+-- Bridge correlation hot-path: LookupBridgeCandidates filters by node_id IN (...)
+-- AND last_seen BETWEEN ... ORDER BY last_seen DESC LIMIT 200. Without this
+-- index, Postgres falls back to seq-scan or to the user_email-leading index
+-- (which doesn't match this predicate shape). On a multi-million-row hot
+-- table this can dominate batch latency.
+CREATE INDEX IF NOT EXISTS idx_user_ip_node_lastseen ON user_ip_history(node_id, last_seen DESC);
 
 -- =============================================================================
 -- User risk profiles / activity baselines

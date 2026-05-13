@@ -77,6 +77,75 @@ type BridgeCandidate struct {
 	LastSeen     time.Time
 }
 
+// RecordBridgedFlows inserts many flows in one round-trip. Resolves bridge/exit
+// node IDs and user UUIDs once per distinct value (cached lookup helpers).
+// Falls back to per-flow insert on error so a single bad row doesn't drop the
+// whole batch.
+func (s *Storage) RecordBridgedFlows(ctx context.Context, flows []*BridgedFlow) error {
+	if len(flows) == 0 {
+		return nil
+	}
+
+	// Resolve node IDs and user UUIDs upfront. LookupNodeID caches per-process,
+	// so repeated calls with the same name are O(1) after the first hit.
+	type resolved struct {
+		userUUID uuid.UUID
+		bridgeID int16
+		exitID   int16
+		ip       string
+		dst      string
+		ts       time.Time
+	}
+	prepped := make([]resolved, 0, len(flows))
+	for _, f := range flows {
+		if f == nil {
+			continue
+		}
+		bridgeID, err := s.LookupNodeID(ctx, f.BridgeNodeID, "bridge")
+		if err != nil {
+			continue
+		}
+		exitID, err := s.LookupNodeID(ctx, f.ExitNodeID, "exit")
+		if err != nil {
+			continue
+		}
+		var userUUID uuid.UUID
+		if f.UserEmail != "" {
+			userUUID, err = s.ResolveUserEmailToUUID(ctx, f.UserEmail)
+			if err != nil {
+				continue
+			}
+		}
+		prepped = append(prepped, resolved{
+			userUUID: userUUID,
+			bridgeID: int16(bridgeID),
+			exitID:   int16(exitID),
+			ip:       f.RealClientIP,
+			dst:      f.Destination,
+			ts:       f.Timestamp.UTC(),
+		})
+	}
+	if len(prepped) == 0 {
+		return nil
+	}
+
+	// Build one INSERT with N value rows.
+	var b strings.Builder
+	b.WriteString("INSERT INTO bridged_flows (user_email, real_client_ip, bridge_node_id, exit_node_id, destination, ts) VALUES ")
+	args := make([]interface{}, 0, len(prepped)*6)
+	for i, r := range prepped {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		k := i * 6
+		fmt.Fprintf(&b, "($%d, $%d::inet, $%d, $%d, $%d, $%d)", k+1, k+2, k+3, k+4, k+5, k+6)
+		args = append(args, r.userUUID, r.ip, r.bridgeID, r.exitID, r.dst, r.ts)
+	}
+
+	_, err := s.pool.Exec(ctx, b.String(), args...)
+	return err
+}
+
 // LookupBridgeCandidates returns every (user_email, ip_address) pair seen on
 // any of `bridgeNodeIDs` within ±window of `at`. The returned slice is
 // ordered by freshness (newest last_seen first).
