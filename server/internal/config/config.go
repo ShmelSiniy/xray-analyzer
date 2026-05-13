@@ -103,7 +103,7 @@ func Load() *Config {
 		OpenAIBaseURL:          getEnv("OPENAI_BASE_URL", ""),
 		OpenAIModel:            getEnv("OPENAI_MODEL", ""),
 		BridgeInboundPattern:    getEnv("BRIDGE_INBOUND_PATTERN", `^BRIDGE_.*_IN(_\d+)?$`),
-		BridgeNodeIDs:           getStringSliceEnv("BRIDGE_NODE_IDS", []string{"ru-white", "ru-bride"}),
+		BridgeNodeIDs:           getStringSliceEnv("BRIDGE_NODE_IDS", []string{"ru-white", "ru-bride", "ru-whitelist"}),
 		BridgeCorrelationWindow: getDurationEnv("BRIDGE_CORRELATION_WINDOW", 15*time.Second),
 		RedisAddr:               getEnv("REDIS_ADDR", ""),
 		RedisPassword:           getEnv("REDIS_PASSWORD", ""),
@@ -116,6 +116,7 @@ func Load() *Config {
 			"usa-1":         "United States",
 			"germany-1":     "Germany",
 			"ru-white":      "RU-White Bride",
+			"ru-whitelist":  "RU-Whitelist Bride",
 			"ru-bride":      "RU Bride",
 		}),
 	}

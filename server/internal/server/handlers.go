@@ -1767,7 +1767,7 @@ func (s *Server) handleBridgedFlows(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleBridgeUsers(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	nodes := []string{"ru-white"}
+	nodes := []string{"ru-whitelist"}
 	if v := q.Get("node"); v != "" {
 		nodes = nodes[:0]
 		for _, p := range strings.Split(v, ",") {
