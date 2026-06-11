@@ -37,6 +37,8 @@ type Server struct {
 	aleria         *aleria.Service
 	redis          *rediscache.Client
 	cacheTTL       time.Duration
+	apiLimiter     *rateLimiter
+	aiLimiter      *rateLimiter
 	pm             *partitions.Manager
 	clients        map[string]*Client
 	clientsMu      sync.RWMutex
@@ -89,6 +91,10 @@ func New(addr string, allowedOrigins []string, apiToken, agentToken string, anal
 		clients:          make(map[string]*Client),
 		dashboardClients: make(map[*DashboardClient]bool),
 		broadcastChan:    make(chan *DashboardUpdate, 100),
+		// API: generous per-IP bucket (dashboard fans out to many endpoints on
+		// load). AI: strict — each call drives a paid LLM request.
+		apiLimiter: newRateLimiter(20, 40),
+		aiLimiter:  newRateLimiter(0.2, 5),
 	}
 	return s
 }
@@ -150,8 +156,18 @@ func (s *Server) requireAPIToken(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// isLocalRequest checks if the request comes from localhost
+// isLocalRequest reports whether the request originates from the same host
+// (the Next.js SSR / cache-warmup path), which is trusted to skip the API
+// token. A loopback RemoteAddr alone is not sufficient: if a reverse proxy is
+// co-located on the same host it would make every forwarded request appear
+// loopback. We therefore additionally require the absence of any proxy
+// forwarding headers — a genuine same-host caller never sets them.
 func isLocalRequest(r *http.Request) bool {
+	if r.Header.Get("X-Forwarded-For") != "" ||
+		r.Header.Get("X-Real-IP") != "" ||
+		r.Header.Get("Forwarded") != "" {
+		return false
+	}
 	host := r.RemoteAddr
 	return strings.HasPrefix(host, "127.0.0.1:") || strings.HasPrefix(host, "[::1]:") || strings.HasPrefix(host, "localhost:")
 }
@@ -188,6 +204,30 @@ func extractToken(r *http.Request) string {
 	return ""
 }
 
+// securityHeaders sets baseline hardening headers on every response and caps
+// the request body size. It deliberately does NOT wrap the ResponseWriter so
+// that handlers which type-assert http.Flusher (SSE streaming) or
+// http.Hijacker (WebSocket upgrades) keep working.
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		// The API serves JSON/SSE only — nothing should embed it as a page or
+		// load sub-resources from it, so the strictest CSP applies.
+		h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		// Cap request bodies. WebSocket upgrades and SSE GETs carry no body;
+		// the only POSTs (AI chat, node delete) send tiny JSON payloads.
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, 8<<20) // 8 MiB
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Start starts the HTTP server
 func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
@@ -200,51 +240,51 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/health", s.handleHealth)
 
 	// API endpoints (require API token)
-	mux.HandleFunc("/api/stats", s.cached(5*time.Second, s.requireAPIToken(s.handleStats)))
-	mux.HandleFunc("/api/nodes", s.cached(10*time.Second, s.requireAPIToken(s.handleNodes)))
+	mux.HandleFunc("/api/stats", s.requireAPIToken(s.cached(5*time.Second, s.handleStats)))
+	mux.HandleFunc("/api/nodes", s.requireAPIToken(s.cached(10*time.Second, s.handleNodes)))
 	mux.HandleFunc("/api/nodes/delete", s.requireAPIToken(s.handleDeleteNode))
-	mux.HandleFunc("/api/users", s.cached(30*time.Second, s.requireAPIToken(s.handleUsers)))
-	mux.HandleFunc("/api/users/all", s.cached(30*time.Second, s.requireAPIToken(s.handleAllUsers)))
-	mux.HandleFunc("/api/hourly", s.cached(60*time.Second, s.requireAPIToken(s.handleHourlyStats)))
-	mux.HandleFunc("/api/online-history", s.cached(30*time.Second, s.requireAPIToken(s.handleOnlineHistory)))
-	mux.HandleFunc("/api/anomalies", s.cached(30*time.Second, s.requireAPIToken(s.handleAnomalies)))
-	mux.HandleFunc("/api/bridged-flows", s.cached(30*time.Second, s.requireAPIToken(s.handleBridgedFlows)))
-	mux.HandleFunc("/api/bridge-users", s.cached(15*time.Second, s.requireAPIToken(s.handleBridgeUsers)))
-	mux.HandleFunc("/api/alerts", s.cached(30*time.Second, s.requireAPIToken(s.handleAlerts)))
-	mux.HandleFunc("/api/blacklist/stats", s.cached(60*time.Second, s.requireAPIToken(s.handleBlacklistStats)))
-	mux.HandleFunc("/api/blacklist/analytics", s.cached(60*time.Second, s.requireAPIToken(s.handleBlacklistAnalytics)))
-	mux.HandleFunc("/api/blacklist/abuse", s.cached(60*time.Second, s.requireAPIToken(s.handleSubscriptionAbuse)))
-	mux.HandleFunc("/api/threatintel/stats", s.cached(60*time.Second, s.requireAPIToken(s.handleThreatIntelStats)))
-	mux.HandleFunc("/api/threatintel/matches", s.cached(30*time.Second, s.requireAPIToken(s.handleThreatIntelMatches)))
-	mux.HandleFunc("/api/threatintel/feeds", s.cached(300*time.Second, s.requireAPIToken(s.handleThreatIntelFeeds)))
-	mux.HandleFunc("/api/threatintel/top-users", s.cached(60*time.Second, s.requireAPIToken(s.handleThreatIntelTopUsers)))
-	mux.HandleFunc("/api/threatintel/time-stats", s.cached(60*time.Second, s.requireAPIToken(s.handleThreatIntelTimeStats)))
-	mux.HandleFunc("/api/threatintel/geo-stats", s.cached(60*time.Second, s.requireAPIToken(s.handleThreatIntelGeoStats)))
-	mux.HandleFunc("/api/threatintel/anomalies", s.cached(30*time.Second, s.requireAPIToken(s.handleThreatIntelAnomalies)))
-	mux.HandleFunc("/api/threatintel/attacks", s.cached(30*time.Second, s.requireAPIToken(s.handleAttackAnomalies)))
-	mux.HandleFunc("/api/threatintel/risk-profiles", s.cached(60*time.Second, s.requireAPIToken(s.handleUserRiskProfiles)))
-	mux.HandleFunc("/api/threatintel/dns-analysis", s.cached(60*time.Second, s.requireAPIToken(s.handleDNSAnalysis)))
-	mux.HandleFunc("/api/threatintel/reports", s.cached(120*time.Second, s.requireAPIToken(s.handleReports)))
+	mux.HandleFunc("/api/users", s.requireAPIToken(s.cached(30*time.Second, s.handleUsers)))
+	mux.HandleFunc("/api/users/all", s.requireAPIToken(s.cached(30*time.Second, s.handleAllUsers)))
+	mux.HandleFunc("/api/hourly", s.requireAPIToken(s.cached(60*time.Second, s.handleHourlyStats)))
+	mux.HandleFunc("/api/online-history", s.requireAPIToken(s.cached(30*time.Second, s.handleOnlineHistory)))
+	mux.HandleFunc("/api/anomalies", s.requireAPIToken(s.cached(30*time.Second, s.handleAnomalies)))
+	mux.HandleFunc("/api/bridged-flows", s.requireAPIToken(s.cached(30*time.Second, s.handleBridgedFlows)))
+	mux.HandleFunc("/api/bridge-users", s.requireAPIToken(s.cached(15*time.Second, s.handleBridgeUsers)))
+	mux.HandleFunc("/api/alerts", s.requireAPIToken(s.cached(30*time.Second, s.handleAlerts)))
+	mux.HandleFunc("/api/blacklist/stats", s.requireAPIToken(s.cached(60*time.Second, s.handleBlacklistStats)))
+	mux.HandleFunc("/api/blacklist/analytics", s.requireAPIToken(s.cached(60*time.Second, s.handleBlacklistAnalytics)))
+	mux.HandleFunc("/api/blacklist/abuse", s.requireAPIToken(s.cached(60*time.Second, s.handleSubscriptionAbuse)))
+	mux.HandleFunc("/api/threatintel/stats", s.requireAPIToken(s.cached(60*time.Second, s.handleThreatIntelStats)))
+	mux.HandleFunc("/api/threatintel/matches", s.requireAPIToken(s.cached(30*time.Second, s.handleThreatIntelMatches)))
+	mux.HandleFunc("/api/threatintel/feeds", s.requireAPIToken(s.cached(300*time.Second, s.handleThreatIntelFeeds)))
+	mux.HandleFunc("/api/threatintel/top-users", s.requireAPIToken(s.cached(60*time.Second, s.handleThreatIntelTopUsers)))
+	mux.HandleFunc("/api/threatintel/time-stats", s.requireAPIToken(s.cached(60*time.Second, s.handleThreatIntelTimeStats)))
+	mux.HandleFunc("/api/threatintel/geo-stats", s.requireAPIToken(s.cached(60*time.Second, s.handleThreatIntelGeoStats)))
+	mux.HandleFunc("/api/threatintel/anomalies", s.requireAPIToken(s.cached(30*time.Second, s.handleThreatIntelAnomalies)))
+	mux.HandleFunc("/api/threatintel/attacks", s.requireAPIToken(s.cached(30*time.Second, s.handleAttackAnomalies)))
+	mux.HandleFunc("/api/threatintel/risk-profiles", s.requireAPIToken(s.cached(60*time.Second, s.handleUserRiskProfiles)))
+	mux.HandleFunc("/api/threatintel/dns-analysis", s.requireAPIToken(s.cached(60*time.Second, s.handleDNSAnalysis)))
+	mux.HandleFunc("/api/threatintel/reports", s.requireAPIToken(s.cached(120*time.Second, s.handleReports)))
 	mux.HandleFunc("/api/threatintel/clear", s.requireAPIToken(s.handleThreatIntelClear))
-	mux.HandleFunc("/api/ipinfo", s.cached(300*time.Second, s.requireAPIToken(s.handleIPInfo)))
+	mux.HandleFunc("/api/ipinfo", s.requireAPIToken(s.cached(300*time.Second, s.handleIPInfo)))
 
 	// Remnawave API endpoints
-	mux.HandleFunc("/api/remnawave/stats", s.cached(60*time.Second, s.requireAPIToken(s.handleRemnawaveStats)))
-	mux.HandleFunc("/api/remnawave/users", s.cached(60*time.Second, s.requireAPIToken(s.handleRemnawaveUsers)))
-	mux.HandleFunc("/api/remnawave/user/", s.cached(60*time.Second, s.requireAPIToken(s.handleRemnawaveUser)))
-	mux.HandleFunc("/api/remnawave/hwid/", s.cached(60*time.Second, s.requireAPIToken(s.handleRemnawaveHwid)))
-	mux.HandleFunc("/api/remnawave/hwid-top", s.cached(60*time.Second, s.requireAPIToken(s.handleRemnawaveHwidTop)))
+	mux.HandleFunc("/api/remnawave/stats", s.requireAPIToken(s.cached(60*time.Second, s.handleRemnawaveStats)))
+	mux.HandleFunc("/api/remnawave/users", s.requireAPIToken(s.cached(60*time.Second, s.handleRemnawaveUsers)))
+	mux.HandleFunc("/api/remnawave/user/", s.requireAPIToken(s.cached(60*time.Second, s.handleRemnawaveUser)))
+	mux.HandleFunc("/api/remnawave/hwid/", s.requireAPIToken(s.cached(60*time.Second, s.handleRemnawaveHwid)))
+	mux.HandleFunc("/api/remnawave/hwid-top", s.requireAPIToken(s.cached(60*time.Second, s.handleRemnawaveHwidTop)))
 	mux.HandleFunc("/api/remnawave/hwid-clear", s.requireAPIToken(s.handleRemnawavelClearHwid))
-	mux.HandleFunc("/api/remnawave/abuse", s.cached(60*time.Second, s.requireAPIToken(s.handleRemnawaveAbuse)))
-	mux.HandleFunc("/api/remnawave/online", s.cached(30*time.Second, s.requireAPIToken(s.handleRemnawaveOnline)))
+	mux.HandleFunc("/api/remnawave/abuse", s.requireAPIToken(s.cached(60*time.Second, s.handleRemnawaveAbuse)))
+	mux.HandleFunc("/api/remnawave/online", s.requireAPIToken(s.cached(30*time.Second, s.handleRemnawaveOnline)))
 	mux.HandleFunc("/api/remnawave/sync", s.requireAPIToken(s.handleRemnawaveSync))
 
 	// Correlation API endpoints
-	mux.HandleFunc("/api/correlation/stats", s.cached(60*time.Second, s.requireAPIToken(s.handleCorrelationStats)))
-	mux.HandleFunc("/api/correlation/profiles", s.cached(60*time.Second, s.requireAPIToken(s.handleCorrelationProfiles)))
-	mux.HandleFunc("/api/correlation/user/", s.cached(60*time.Second, s.requireAPIToken(s.handleCorrelationUser)))
-	mux.HandleFunc("/api/correlation/shared-ips", s.cached(60*time.Second, s.requireAPIToken(s.handleCorrelationSharedIPs)))
-	mux.HandleFunc("/api/correlation/shared-hwids", s.cached(60*time.Second, s.requireAPIToken(s.handleCorrelationSharedHWIDs)))
+	mux.HandleFunc("/api/correlation/stats", s.requireAPIToken(s.cached(60*time.Second, s.handleCorrelationStats)))
+	mux.HandleFunc("/api/correlation/profiles", s.requireAPIToken(s.cached(60*time.Second, s.handleCorrelationProfiles)))
+	mux.HandleFunc("/api/correlation/user/", s.requireAPIToken(s.cached(60*time.Second, s.handleCorrelationUser)))
+	mux.HandleFunc("/api/correlation/shared-ips", s.requireAPIToken(s.cached(60*time.Second, s.handleCorrelationSharedIPs)))
+	mux.HandleFunc("/api/correlation/shared-hwids", s.requireAPIToken(s.cached(60*time.Second, s.handleCorrelationSharedHWIDs)))
 
 	// AI Chat endpoints
 	mux.HandleFunc("/api/ai/chat", s.requireAPIToken(s.handleAIChat))
@@ -256,17 +296,32 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/debug/users", s.requireAPIToken(s.handleDebugUsers))
 
 	// User-specific endpoints (must be registered before /api/users/)
-	mux.HandleFunc("/api/users/", s.cached(30*time.Second, s.requireAPIToken(s.handleUserRouter)))
+	mux.HandleFunc("/api/users/", s.requireAPIToken(s.cached(30*time.Second, s.handleUserRouter)))
 
 	// Start background jobs
 	go s.startCleanupJob(ctx)
 	go s.startBroadcastLoop(ctx)
 	go s.startOnlineSnapshotJob(ctx)
 	go s.startCacheWarmupJob(ctx)
+	go s.startRateLimitJanitor(ctx)
+
+	// Middleware chain (outermost first): rate limit → security headers → mux.
+	// Rate limiting rejects abuse cheaply before any work; the security layer
+	// sets hardening headers and caps request bodies without wrapping the
+	// ResponseWriter, so streaming (SSE) and WebSocket handlers keep working.
+	var handler http.Handler = mux
+	handler = s.securityHeaders(handler)
+	handler = s.rateLimit(handler)
 
 	server := &http.Server{
 		Addr:    s.addr,
-		Handler: mux,
+		Handler: handler,
+		// ReadHeaderTimeout bounds slow-header (Slowloris) attacks. We avoid
+		// ReadTimeout/WriteTimeout because /api/ai/chat/stream is a long-lived
+		// SSE stream and the /ws* endpoints are hijacked WebSockets — an
+		// absolute deadline would truncate both.
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {

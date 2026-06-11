@@ -137,7 +137,7 @@ export function FloatingAIChat() {
   // Load sessions
   const loadSessions = useCallback(async () => {
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       const headers: HeadersInit = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -162,7 +162,7 @@ export function FloatingAIChat() {
     setLoadingSession(true);
     
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       const headers: HeadersInit = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -196,7 +196,7 @@ export function FloatingAIChat() {
   // Create new session
   const createSession = useCallback(async () => {
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       const headers: HeadersInit = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -222,7 +222,7 @@ export function FloatingAIChat() {
   const deleteSession = useCallback(
     async (sessionId: string) => {
       try {
-        const token = localStorage.getItem("auth_token");
+        const token = localStorage.getItem("xray_auth_token");
         const headers: HeadersInit = {};
         if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -246,7 +246,7 @@ export function FloatingAIChat() {
   // Clear all sessions
   const clearAllSessions = useCallback(async () => {
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       const headers: HeadersInit = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -307,7 +307,7 @@ export function FloatingAIChat() {
     setStreamContent("");
 
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       const headers: HeadersInit = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -709,7 +709,7 @@ export function FloatingAIChat() {
                     >
                       {msg.role === "assistant" ? (
                         <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-background/50 prose-pre:border prose-code:text-purple-500 prose-code:bg-purple-500/10 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-headings:text-foreground prose-strong:text-foreground prose-ul:my-2 prose-li:my-0.5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                          <ReactMarkdown skipHtml>{msg.content}</ReactMarkdown>
                         </div>
                       ) : (
                         <p>{msg.content}</p>
@@ -732,7 +732,7 @@ export function FloatingAIChat() {
                     <div className="bg-muted rounded-lg px-3 py-2 text-sm max-w-[85%]">
                       {streamContent ? (
                         <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-background/50 prose-pre:border prose-code:text-purple-500 prose-code:bg-purple-500/10 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-headings:text-foreground prose-strong:text-foreground prose-ul:my-2 prose-li:my-0.5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                          <ReactMarkdown>{streamContent}</ReactMarkdown>
+                          <ReactMarkdown skipHtml>{streamContent}</ReactMarkdown>
                           <span className="inline-block w-1.5 h-4 bg-purple-500 animate-pulse ml-0.5 rounded-sm" />
                         </div>
                       ) : (

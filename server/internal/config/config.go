@@ -81,7 +81,7 @@ func Load() *Config {
 	return &Config{
 		ListenAddr:             getEnv("LISTEN_ADDR", ":8080"),
 		DBPath:                 getEnv("DB_PATH", "./data/analyzer.db"),
-		PostgresURL:            getEnv("POSTGRES_URL", "postgres://xray_analyzer:changeme@analyzer-postgres:5432/xray_analyzer?sslmode=disable"),
+		PostgresURL:            getEnv("POSTGRES_URL", ""), // must be provided; no embedded default credential
 		AllowedOrigins:         getStringSliceEnv("ALLOWED_ORIGINS", nil),
 		APIToken:               getEnv("API_TOKEN", ""),
 		AgentToken:             getEnv("AGENT_TOKEN", ""),
@@ -99,9 +99,9 @@ func Load() *Config {
 		RemnawaveSyncInterval:  getDurationEnv("REMNAWAVE_SYNC_INTERVAL", 1*time.Minute), // More frequent for accurate online stats
 		// OPENAI_* are the canonical env names; ALERIA_API_KEY is kept as
 		// a back-compat fallback so existing deployments don't break.
-		OpenAIAPIKey:           getEnv("OPENAI_API_KEY", getEnv("ALERIA_API_KEY", "")),
-		OpenAIBaseURL:          getEnv("OPENAI_BASE_URL", ""),
-		OpenAIModel:            getEnv("OPENAI_MODEL", ""),
+		OpenAIAPIKey:            getEnv("OPENAI_API_KEY", getEnv("ALERIA_API_KEY", "")),
+		OpenAIBaseURL:           getEnv("OPENAI_BASE_URL", ""),
+		OpenAIModel:             getEnv("OPENAI_MODEL", ""),
 		BridgeInboundPattern:    getEnv("BRIDGE_INBOUND_PATTERN", `^BRIDGE_.*_IN(_\d+)?$`),
 		BridgeNodeIDs:           getStringSliceEnv("BRIDGE_NODE_IDS", []string{"ru-white", "ru-bride", "ru-whitelist"}),
 		BridgeCorrelationWindow: getDurationEnv("BRIDGE_CORRELATION_WINDOW", 15*time.Second),

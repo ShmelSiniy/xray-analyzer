@@ -234,7 +234,7 @@ export function SubscriptionAbuseAnalytics({
       setLoading(true);
       setError(null);
       
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       const headers: HeadersInit = {};
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;

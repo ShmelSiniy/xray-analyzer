@@ -505,7 +505,8 @@ func (s *Service) Query(ctx context.Context, req *ChatQueryRequest) (*ChatQueryR
 
 			var results []string
 			for _, fc := range functionCalls {
-				log.Printf("[aleria] Executing parsed function: %s with args: %s", fc.Name, fc.Args)
+				// Args may contain a user email — log the function name only.
+				log.Printf("[aleria] Executing parsed function: %s", fc.Name)
 				result, err := s.executeFunction(ctx, fc.Name, fc.Args)
 				if err != nil {
 					log.Printf("[aleria] Function %s error: %v", fc.Name, err)
@@ -623,7 +624,8 @@ func (s *Service) buildFunctionsHelp() string {
 
 // executeFunction executes a function call and returns the result as JSON
 func (s *Service) executeFunction(ctx context.Context, name string, argsJSON string) (string, error) {
-	log.Printf("[aleria] executing function: %s with args: %s", name, argsJSON)
+	// Args may contain a user email — log the function name only.
+	log.Printf("[aleria] executing function: %s", name)
 
 	var args map[string]interface{}
 	if argsJSON != "" && argsJSON != "{}" {

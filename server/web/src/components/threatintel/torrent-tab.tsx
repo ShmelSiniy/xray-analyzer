@@ -40,7 +40,7 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
   const fetchUsers = useCallback(async (page: number) => {
     setUsersLoading(true);
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       const headers: HeadersInit = {};
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
@@ -63,7 +63,7 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
   // Fetch torrent matches on mount
   const fetchMatches = useCallback(async () => {
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       const headers: HeadersInit = {};
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;

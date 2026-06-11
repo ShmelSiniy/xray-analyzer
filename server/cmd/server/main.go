@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -194,15 +195,24 @@ func main() {
 		log.Println("server: HTTP response cache enabled (Redis L2, TTL=10s)")
 	}
 
+	// Authentication is mandatory in normal operation. Running wide-open used
+	// to be a silent warning; it now aborts startup so a missing token can
+	// never silently expose the API or the agent channel. Set ALLOW_NO_AUTH=1
+	// to intentionally run without auth (local development only).
+	allowNoAuth := os.Getenv("ALLOW_NO_AUTH") == "1" || strings.EqualFold(os.Getenv("ALLOW_NO_AUTH"), "true")
 	if cfg.APIToken != "" {
 		log.Println("auth: API token authentication enabled")
+	} else if allowNoAuth {
+		log.Println("auth: WARNING - no API_TOKEN set, API is UNPROTECTED (ALLOW_NO_AUTH override)")
 	} else {
-		log.Println("auth: WARNING - no API_TOKEN set, API is unprotected!")
+		log.Fatalln("auth: refusing to start — API_TOKEN is not set. Set API_TOKEN, or ALLOW_NO_AUTH=1 for local dev only.")
 	}
 	if cfg.AgentToken != "" {
 		log.Println("auth: agent token authentication enabled")
+	} else if allowNoAuth {
+		log.Println("auth: WARNING - no AGENT_TOKEN set, agent WebSocket is UNPROTECTED (ALLOW_NO_AUTH override)")
 	} else {
-		log.Println("auth: WARNING - no AGENT_TOKEN set, agent WebSocket is unprotected!")
+		log.Fatalln("auth: refusing to start — AGENT_TOKEN is not set. Set AGENT_TOKEN, or ALLOW_NO_AUTH=1 for local dev only.")
 	}
 
 	// Initialize Remnawave client and sync service

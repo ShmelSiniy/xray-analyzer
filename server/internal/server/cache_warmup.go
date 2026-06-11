@@ -114,7 +114,7 @@ func (s *Server) hitWarmupPath(ctx context.Context, path string) bool {
 func (s *Server) warmupMux() *http.ServeMux {
 	m := http.NewServeMux()
 	wrap := func(pattern string, h http.HandlerFunc) {
-		m.HandleFunc(pattern, s.cached(0, s.requireAPIToken(h)))
+		m.HandleFunc(pattern, s.requireAPIToken(s.cached(0, h)))
 	}
 	wrap("/api/stats", s.handleStats)
 	wrap("/api/nodes", s.handleNodes)
@@ -145,6 +145,6 @@ type warmupRecorder struct {
 	status int
 }
 
-func (w *warmupRecorder) Header() http.Header          { return w.header }
-func (w *warmupRecorder) WriteHeader(status int)       { w.status = status }
-func (w *warmupRecorder) Write(b []byte) (int, error)  { return w.body.Write(b) }
+func (w *warmupRecorder) Header() http.Header         { return w.header }
+func (w *warmupRecorder) WriteHeader(status int)      { w.status = status }
+func (w *warmupRecorder) Write(b []byte) (int, error) { return w.body.Write(b) }

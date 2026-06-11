@@ -109,7 +109,7 @@ export default function CorrelationPage() {
     else setLoading(true);
     
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       const headers: HeadersInit = {};
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;

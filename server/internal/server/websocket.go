@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"time"
 
@@ -21,20 +23,37 @@ func (s *Server) createUpgrader(readBuf, writeBuf int) websocket.Upgrader {
 		ReadBufferSize:  readBuf,
 		WriteBufferSize: writeBuf,
 		CheckOrigin: func(r *http.Request) bool {
-			// If no allowed origins configured, allow all (for development)
-			if len(s.allowedOrigins) == 0 {
+			origin := r.Header.Get("Origin")
+			// Non-browser clients (e.g. the node agent) send no Origin header.
+			if origin == "" {
 				return true
 			}
-			origin := r.Header.Get("Origin")
-			if origin == "" {
-				return true // Allow requests without Origin header (non-browser clients)
-			}
-			for _, allowed := range s.allowedOrigins {
-				if origin == allowed {
-					return true
+			// An explicit allowlist takes precedence when configured.
+			if len(s.allowedOrigins) > 0 {
+				for _, allowed := range s.allowedOrigins {
+					if origin == allowed {
+						return true
+					}
 				}
+				log.Printf("server: rejected WebSocket connection from origin: %s", origin)
+				return false
 			}
-			log.Printf("server: rejected WebSocket connection from origin: %s", origin)
+			// No allowlist configured: fall back to same-origin (Origin host
+			// must match the request Host, port-agnostic). This blocks
+			// cross-site WebSocket hijacking without requiring ALLOWED_ORIGINS,
+			// while still working for the dashboard served from the same host.
+			u, err := url.Parse(origin)
+			if err != nil {
+				return false
+			}
+			reqHost := r.Host
+			if h, _, splitErr := net.SplitHostPort(reqHost); splitErr == nil {
+				reqHost = h
+			}
+			if u.Hostname() == reqHost {
+				return true
+			}
+			log.Printf("server: rejected cross-origin WebSocket from %s (host %s)", origin, r.Host)
 			return false
 		},
 	}
@@ -331,7 +350,7 @@ func (s *Server) BroadcastDashboardUpdate() {
 // Broadcasts are triggered by events (incoming batches) but rate-limited to avoid
 // hammering the DB when many nodes send batches at once.
 func (s *Server) startBroadcastLoop(ctx context.Context) {
-	const minInterval = 3 * time.Second // throttle window
+	const minInterval = 3 * time.Second  // throttle window
 	const maxInterval = 10 * time.Second // keepalive (send even if no events)
 
 	var lastBroadcast time.Time

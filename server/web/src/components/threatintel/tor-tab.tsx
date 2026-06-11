@@ -40,7 +40,7 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
   const fetchUsers = useCallback(async (page: number) => {
     setUsersLoading(true);
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       const headers: HeadersInit = {};
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
@@ -63,7 +63,7 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
   // Fetch tor matches on mount
   const fetchMatches = useCallback(async () => {
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       const headers: HeadersInit = {};
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;

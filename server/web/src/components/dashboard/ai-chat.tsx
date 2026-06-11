@@ -57,7 +57,7 @@ export function AIChat({ className }: AIChatProps) {
     setLoading(true);
 
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       const headers: HeadersInit = { "Content-Type": "application/json" };
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
@@ -204,7 +204,7 @@ export function AIChat({ className }: AIChatProps) {
                   >
                     {msg.role === "assistant" ? (
                       <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        <ReactMarkdown skipHtml>{msg.content}</ReactMarkdown>
                       </div>
                     ) : (
                       <p className="text-sm">{msg.content}</p>

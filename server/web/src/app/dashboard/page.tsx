@@ -265,7 +265,7 @@ export default function DashboardPage() {
   // Quick action handlers
   const handleSyncRemnawave = useCallback(async () => {
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       await authFetch("/api/remnawave/sync", {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -277,7 +277,7 @@ export default function DashboardPage() {
 
   const handleRefreshBlacklist = useCallback(async () => {
     try {
-      const token = localStorage.getItem("auth_token");
+      const token = localStorage.getItem("xray_auth_token");
       await authFetch("/api/threatintel/refresh", {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},

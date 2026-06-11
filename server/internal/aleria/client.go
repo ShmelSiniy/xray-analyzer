@@ -186,7 +186,9 @@ func (c *Client) ChatWithTools(ctx context.Context, messages []map[string]interf
 		return nil, fmt.Errorf("aleria: marshal request: %w", err)
 	}
 
-	log.Printf("[aleria] API request (truncated): %s", truncateString(string(body), 2000))
+	// Do not log the request body: it contains the analysis prompt with user
+	// emails and other PII. Size only.
+	log.Printf("[aleria] API request: %d bytes", len(body))
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
@@ -211,7 +213,9 @@ func (c *Client) ChatWithTools(ctx context.Context, messages []map[string]interf
 		return nil, fmt.Errorf("aleria: API error %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	log.Printf("[aleria] API response: %s", string(respBody))
+	// Do not log the response body: it can contain user PII echoed back by the
+	// model. Status and size only.
+	log.Printf("[aleria] API response: status %d, %d bytes", resp.StatusCode, len(respBody))
 
 	var chatResp ChatResponse
 	if err := json.Unmarshal(respBody, &chatResp); err != nil {

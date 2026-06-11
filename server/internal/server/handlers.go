@@ -366,7 +366,10 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if s.pm != nil {
 		if err := s.pm.Healthy(r.Context()); err != nil {
-			http.Error(w, `{"status":"unhealthy","reason":"partition unhealthy: `+err.Error()+`"}`, http.StatusServiceUnavailable)
+			// /health is unauthenticated — don't reflect internal error detail
+			// (schema/partition names) to anonymous callers; log it instead.
+			log.Printf("health: partition unhealthy: %v", err)
+			http.Error(w, `{"status":"unhealthy","reason":"partition unhealthy"}`, http.StatusServiceUnavailable)
 			return
 		}
 	}
