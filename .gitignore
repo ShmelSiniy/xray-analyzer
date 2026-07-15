@@ -40,3 +40,6 @@ server/data/*.db-wal
 .env
 .env.agent
 .vscode/
+
+# GeoIP databases (large binaries, fetched by update-geoip.sh)
+*.mmdb
