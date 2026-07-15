@@ -338,6 +338,16 @@ func (s *SyncService) syncHwidDevices(ctx context.Context) error {
 	// Track device count per user for updating user records
 	userDeviceCounts := make(map[string]int)
 
+	// The panel returns a numeric userId on each HWID device, not a UUID.
+	// Build a userId -> UUID index from the already-synced users so devices
+	// can be resolved back to their owner.
+	s.mu.RLock()
+	uuidByUserID := make(map[int64]string, len(s.users))
+	for _, u := range s.users {
+		uuidByUserID[u.ID] = u.UUID
+	}
+	s.mu.RUnlock()
+
 	for {
 		resp, err := s.client.GetAllHwidDevices(ctx, start, pageSize)
 		if err != nil {
@@ -345,6 +355,15 @@ func (s *SyncService) syncHwidDevices(ctx context.Context) error {
 		}
 
 		for _, d := range resp.Devices {
+			// Resolve the numeric userId returned by the panel into a UUID.
+			if d.UserUUID == "" && d.UserID != 0 {
+				d.UserUUID = uuidByUserID[d.UserID]
+			}
+			// Skip orphaned HWID entries with no associated user — an empty
+			// UUID is rejected by the uuid column downstream.
+			if d.UserUUID == "" || d.Hwid == "" {
+				continue
+			}
 			devices[d.UserUUID] = append(devices[d.UserUUID], d)
 			userDeviceCounts[d.UserUUID]++
 
@@ -365,7 +384,7 @@ func (s *SyncService) syncHwidDevices(ctx context.Context) error {
 					Platform:     d.Platform,
 					OSVersion:    d.OSVersion,
 					DeviceModel:  d.DeviceModel,
-					AppVersion:   nil, // Not in API response
+					AppVersion:   d.UserAgent, // panel exposes app/version via userAgent
 					FirstSeenAt:  d.CreatedAt,
 					LastActiveAt: &d.UpdatedAt,
 					SyncedAt:     now,

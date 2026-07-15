@@ -96,8 +96,12 @@ type UsersResponse struct {
 
 // HwidDevice represents a hardware device associated with a user
 type HwidDevice struct {
-	Hwid        string    `json:"hwid"`
-	UserUUID    string    `json:"userUuid"`
+	Hwid string `json:"hwid"`
+	// UserUUID is resolved from UserID during sync — the panel returns a
+	// numeric userId on each HWID device, not a UUID, so it is absent from
+	// the raw API payload and populated in syncHwidDevices.
+	UserUUID    string    `json:"-"`
+	UserID      int64     `json:"userId"`
 	Platform    *string   `json:"platform"` // iOS, Android, Windows, etc.
 	OSVersion   *string   `json:"osVersion"`
 	DeviceModel *string   `json:"deviceModel"`
