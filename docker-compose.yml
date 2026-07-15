@@ -19,6 +19,7 @@ services:
     volumes:
       - analyzer-data:/app/data
       - ./server/blacklist.txt:/app/blacklist.txt:ro
+      - ./server/ignored-users.txt:/app/ignored-users.txt:ro
     environment:
       - LISTEN_ADDR=:8237
       - DB_PATH=/app/data/analyzer.db
@@ -34,6 +35,7 @@ services:
       - REMNAWAVE_URL=${REMNAWAVE_URL:-}
       - REMNAWAVE_API_TOKEN=${REMNAWAVE_API_TOKEN:-}
       - REMNAWAVE_SYNC_INTERVAL=${REMNAWAVE_SYNC_INTERVAL:-5m}
+      - IGNORED_USERS_PATH=/app/ignored-users.txt
       - ALERIA_API_KEY=${ALERIA_API_KEY:-}
       - API_TOKEN=${API_TOKEN:-}
       - AGENT_TOKEN=${AGENT_TOKEN:-}

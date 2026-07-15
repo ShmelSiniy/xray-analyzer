@@ -94,6 +94,10 @@ type SyncService struct {
 	// ID Cache for resolving numeric IDs to usernames
 	idCache *IDCache
 
+	// ignore holds usernames excluded from all stats/monitoring. Nil means
+	// no one is ignored.
+	ignore *IgnoreList
+
 	// Cached data
 	mu              sync.RWMutex
 	users           map[string]*User        // by UUID
@@ -125,6 +129,13 @@ func NewSyncService(client *Client, syncInterval time.Duration) *SyncService {
 // SetStorage sets the storage writer for persisting data
 func (s *SyncService) SetStorage(storage StorageWriter) {
 	s.storage = storage
+}
+
+// SetIgnoreList wires an ignore list whose matching usernames are excluded
+// from all synced data (and therefore from every stat/monitor/list that reads
+// it). Nil disables ignoring.
+func (s *SyncService) SetIgnoreList(l *IgnoreList) {
+	s.ignore = l
 }
 
 // SetIDCacheRedis wires the persistent L2 cache into the id cache. Nil is
@@ -225,8 +236,23 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 	usersByID := make(map[int64]*User)
 	now := time.Now()
 
+	// Refresh the ignore list so edits to the file take effect on the next
+	// sync without a restart.
+	ignored := 0
+	if s.ignore != nil {
+		s.ignore.Reload()
+	}
+
 	for i := range resp.Users {
 		user := &resp.Users[i]
+
+		// Skip ignored users (e.g. technical accounts): they enter no cache
+		// and are not persisted, so they disappear from every downstream
+		// stat, correlation, alert and list.
+		if s.ignore != nil && s.ignore.Match(user.Username) {
+			ignored++
+			continue
+		}
 
 		// Populate legacy fields from nested UserTraffic (API v2.3.x)
 		user.PopulateFromTraffic()
@@ -300,6 +326,10 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 				log.Printf("[remnawave] failed to persist user %s: %v", user.Username, err)
 			}
 		}
+	}
+
+	if ignored > 0 {
+		log.Printf("[remnawave] ignore list excluded %d user(s) from sync", ignored)
 	}
 
 	s.mu.Lock()

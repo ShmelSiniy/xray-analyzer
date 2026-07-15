@@ -223,6 +223,12 @@ func main() {
 		remnaSvc = remnawave.NewSyncService(remnaClient, cfg.RemnawaveSyncInterval)
 		remnaSvc.SetIDCacheRedis(redisClient)
 		remnaSvc.SetStorage(store) // Persist data to SQLite
+		// Exclude ignored users (e.g. technical accounts) from all stats/monitoring.
+		ignoreList := remnawave.NewIgnoreList(cfg.IgnoredUsersPath)
+		remnaSvc.SetIgnoreList(ignoreList)
+		if !ignoreList.Empty() {
+			log.Printf("remnawave: ignore list loaded from %s", cfg.IgnoredUsersPath)
+		}
 		// Warm cache after each sync for fast page loads
 		remnaSvc.OnSyncComplete(func() {
 			store.WarmCache(ctx)

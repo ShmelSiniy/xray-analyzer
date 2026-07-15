@@ -1,0 +1,18 @@
+# Ignored users — excluded from ALL statistics and monitoring.
+#
+# Matched against the Remnawave username, case-insensitively. Ignored users
+# enter no cache and are not persisted, so they disappear from every stat,
+# correlation, threat/abuse alert and user list.
+#
+# One pattern per line. Lines starting with # are comments. Supported forms:
+#   tech_user      exact match
+#   tech_user*     prefix match (everything starting with "tech_user")
+#   *_bot          suffix match (everything ending with "_bot")
+#   *service*      substring match
+#   *              matches everyone (use with care)
+#
+# Changes take effect on the next sync cycle (no rebuild/restart needed) —
+# the file is re-read every sync.
+
+# Example: technical accounts
+# tech_user*

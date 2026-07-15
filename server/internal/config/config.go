@@ -38,6 +38,7 @@ type Config struct {
 	RemnawaveURL          string
 	RemnawaveAPIToken     string
 	RemnawaveSyncInterval time.Duration // Interval for syncing data from Remnawave
+	IgnoredUsersPath      string        // Path to file with usernames/patterns excluded from stats & monitoring
 
 	// AI assistant settings — OpenAI-compatible chat-completions endpoint.
 	// Works with OpenAI, Aleria, Together, OpenRouter, local llama.cpp/vLLM.
@@ -97,6 +98,7 @@ func Load() *Config {
 		RemnawaveURL:           getEnv("REMNAWAVE_URL", ""),
 		RemnawaveAPIToken:      getEnv("REMNAWAVE_API_TOKEN", ""),
 		RemnawaveSyncInterval:  getDurationEnv("REMNAWAVE_SYNC_INTERVAL", 1*time.Minute), // More frequent for accurate online stats
+		IgnoredUsersPath:       getEnv("IGNORED_USERS_PATH", "./ignored-users.txt"),
 		// OPENAI_* are the canonical env names; ALERIA_API_KEY is kept as
 		// a back-compat fallback so existing deployments don't break.
 		OpenAIAPIKey:            getEnv("OPENAI_API_KEY", getEnv("ALERIA_API_KEY", "")),
