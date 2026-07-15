@@ -1,0 +1,22 @@
+# Threat-intel whitelist — domains/IPs to exclude from threat matching.
+# One entry per line. Lines starting with # are comments.
+# Supports parent-domain matching: adding "example.com" also whitelists
+# "sub.example.com", "deep.sub.example.com", etc.
+#
+# Changes take effect on container restart (no rebuild needed):
+#   docker compose restart analyzer-server
+
+# Example: my internal services
+# myservice.example.com
+# 192.168.1.100
+rutracker.org
+rutor.org
+rutracker.net
+aftership.com
+pythonhosted.org
+rutracker.cc
+bluebird-hd.org
+discordapp.com
+utorrent.com
+pornolab.net
+cloudinary.com
